@@ -1,41 +1,64 @@
+name: KLOS GSI Repacker Native
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Install Tools Sakti
         run: |
           sudo apt-get update
-          # Kita hapus 'img2simg' dari daftar install karena sudah ada di dalam android-sdk-libsparse-utils
           sudo apt-get install -y erofs-utils p7zip-full wget android-sdk-libsparse-utils
 
-      - name: Download & Extract GSI
+      - name: Download & Extract GSI MisterZtr
         run: |
-          # Pakai -q biar log-nya gak penuh sama progress bar
+          # Download GSI dari SourceForge
           wget -q -O gsi_archive.7z "https://sourceforge.net/projects/misterztr-gsi/files/LineageOS/Android%2016/LineageOS-23.0-20260109-GAPPS-EROFS-GSI.7z/download"
+          
+          # Bongkar arsip 7z
           7z x gsi_archive.7z -ooutput_img
+          
+          # Cari file .img dan namakan input_gsi.img
           GSI_IMG=$(find output_img -name "*.img")
           mv "$GSI_IMG" input_gsi.img
 
-      - name: Unpack EROFS
+      - name: Unpack EROFS (Bedah Sistem)
         run: |
           mkdir folder_isi
           sudo fsck.erofs --extract=folder_isi input_gsi.img
 
-      - name: Injeksi Kedaulatan KLOS
+      - name: Injeksi Kedaulatan KLOS V16
         run: |
-          # Pastikan build.prop bisa diedit
+          # Pastikan file build.prop bisa dimodifikasi
           sudo chmod 644 folder_isi/system/build.prop
+          
+          # Gunakan sed untuk mengganti ID tampilan dan menambahkan identitas KLOS
           sudo sed -i 's/ro.build.display.id=.*/ro.build.display.id=KLOS-V16-NATIVE-BOS/g' folder_isi/system/build.prop
+          
+          # Tambahkan baris kedaulatan di akhir build.prop
           echo "ro.klos.version=V16-NATIVE" | sudo tee -a folder_isi/system/build.prop
           echo "ro.klos.ai=Xenom-Core" | sudo tee -a folder_isi/system/build.prop
+          echo "ro.klos.features=KL-Animation,GDMPEG,Native-C++" | sudo tee -a folder_isi/system/build.prop
+          echo "ro.klos.codename=KotakLompat-PocoM5" | sudo tee -a folder_isi/system/build.prop
 
-      - name: Repack EROFS (The "Beas" Way)
+      - name: Repack EROFS (Optimasi Helio G99)
         run: |
-          # Menggunakan mkfs.erofs terbaru di Ubuntu
+          # Repack menggunakan kompresi lz4hc agar ringan dijalankan di Poco M5
+          # -zlz4hc : Kompresi tinggi untuk performa "beas"
+          # -T 0    : Reset timestamp untuk bypass verifikasi
           sudo mkfs.erofs -zlz4hc -T 0 --mount-point /system klos_v16_raw.img folder_isi/
 
-      - name: Convert to Sparse (Fix Command)
+      - name: Convert ke Sparse Image
         run: |
-          # Perintah tetap img2simg, tapi sekarang paketnya sudah benar
+          # Mengubah raw image menjadi sparse agar bisa diflash lewat DSU/Fastboot
           img2simg klos_v16_raw.img klos_v16_sparse.img
 
-      - name: Upload Kedaulatan
+      - name: Upload Artifact Kedaulatan
         uses: actions/upload-artifact@v4
         with:
           name: KLOS-V16-GSI-PocoM5
