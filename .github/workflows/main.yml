@@ -1,0 +1,58 @@
+name: KLOS GSI Repacker Native
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y erofs-utils img2simg p7zip-full wget
+
+      - name: Download & Extract GSI
+        run: |
+          # Download dari link SourceForge Bos
+          wget -O gsi_archive.7z "https://sourceforge.net/projects/misterztr-gsi/files/LineageOS/Android%2016/LineageOS-23.0-20260109-GAPPS-EROFS-GSI.7z/download"
+          
+          # Ekstrak .7z buat dapet file .img
+          7z x gsi_archive.7z -ooutput_img
+          
+          # Cari file .img hasil ekstrak
+          GSI_IMG=$(find output_img -name "*.img")
+          mv "$GSI_IMG" input_gsi.img
+
+      - name: Unpack EROFS (Kedaulatan Mode)
+        run: |
+          mkdir folder_isi
+          sudo fsck.erofs --extract=folder_isi input_gsi.img
+
+      - name: Injeksi KLOS Core & Xenom
+        run: |
+          # Di sini tempat kita masukin logika KLOS Bos
+          # Contoh: Ganti nama build agar terdeteksi sebagai KLOS
+          sudo sed -i 's/ro.build.display.id=.*/ro.build.display.id=KLOS-V16-NATIVE-BOS/g' folder_isi/system/build.prop
+          sudo echo "ro.klos.features=KL-Animation,GDMPEG,Xenom-Core" >> folder_isi/system/build.prop
+          
+          # Bos bisa tambah perintah 'cp' di sini buat masukin file KL-Animation nantinya
+
+      - name: Repack EROFS (Optimasi Helio G99)
+        run: |
+          # Pakai lz4hc biar performa "beas" saat baca asset animasi
+          sudo mkfs.erofs -zlz4hc -T 0 --mount-point /system klos_v16_raw.img folder_isi/
+
+      - name: Convert to Sparse
+        run: |
+          img2simg klos_v16_raw.img klos_v16_sparse.img
+
+      - name: Upload Kedaulatan
+        uses: actions/upload-artifact@v4
+        with:
+          name: KLOS-V16-GSI-PocoM5
+          path: klos_v16_sparse.img
+          
