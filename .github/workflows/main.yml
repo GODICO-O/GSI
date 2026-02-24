@@ -1,53 +1,38 @@
-name: KLOS GSI Repacker Native
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Tools
+      - name: Install Tools Sakti
         run: |
           sudo apt-get update
-          sudo apt-get install -y erofs-utils img2simg p7zip-full wget
+          # Kita hapus 'img2simg' dari daftar install karena sudah ada di dalam android-sdk-libsparse-utils
+          sudo apt-get install -y erofs-utils p7zip-full wget android-sdk-libsparse-utils
 
       - name: Download & Extract GSI
         run: |
-          # Download dari link SourceForge Bos
-          wget -O gsi_archive.7z "https://sourceforge.net/projects/misterztr-gsi/files/LineageOS/Android%2016/LineageOS-23.0-20260109-GAPPS-EROFS-GSI.7z/download"
-          
-          # Ekstrak .7z buat dapet file .img
+          # Pakai -q biar log-nya gak penuh sama progress bar
+          wget -q -O gsi_archive.7z "https://sourceforge.net/projects/misterztr-gsi/files/LineageOS/Android%2016/LineageOS-23.0-20260109-GAPPS-EROFS-GSI.7z/download"
           7z x gsi_archive.7z -ooutput_img
-          
-          # Cari file .img hasil ekstrak
           GSI_IMG=$(find output_img -name "*.img")
           mv "$GSI_IMG" input_gsi.img
 
-      - name: Unpack EROFS (Kedaulatan Mode)
+      - name: Unpack EROFS
         run: |
           mkdir folder_isi
           sudo fsck.erofs --extract=folder_isi input_gsi.img
 
-      - name: Injeksi KLOS Core & Xenom
+      - name: Injeksi Kedaulatan KLOS
         run: |
-          # Di sini tempat kita masukin logika KLOS Bos
-          # Contoh: Ganti nama build agar terdeteksi sebagai KLOS
+          # Pastikan build.prop bisa diedit
+          sudo chmod 644 folder_isi/system/build.prop
           sudo sed -i 's/ro.build.display.id=.*/ro.build.display.id=KLOS-V16-NATIVE-BOS/g' folder_isi/system/build.prop
-          sudo echo "ro.klos.features=KL-Animation,GDMPEG,Xenom-Core" >> folder_isi/system/build.prop
-          
-          # Bos bisa tambah perintah 'cp' di sini buat masukin file KL-Animation nantinya
+          echo "ro.klos.version=V16-NATIVE" | sudo tee -a folder_isi/system/build.prop
+          echo "ro.klos.ai=Xenom-Core" | sudo tee -a folder_isi/system/build.prop
 
-      - name: Repack EROFS (Optimasi Helio G99)
+      - name: Repack EROFS (The "Beas" Way)
         run: |
-          # Pakai lz4hc biar performa "beas" saat baca asset animasi
+          # Menggunakan mkfs.erofs terbaru di Ubuntu
           sudo mkfs.erofs -zlz4hc -T 0 --mount-point /system klos_v16_raw.img folder_isi/
 
-      - name: Convert to Sparse
+      - name: Convert to Sparse (Fix Command)
         run: |
+          # Perintah tetap img2simg, tapi sekarang paketnya sudah benar
           img2simg klos_v16_raw.img klos_v16_sparse.img
 
       - name: Upload Kedaulatan
